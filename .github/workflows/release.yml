@@ -1,0 +1,71 @@
+name: Generate APK & Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Secrets Configuration
+        run: |
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          else
+            echo "GEMINI_API_KEY=dummy_key" > .env
+          fi
+
+      - name: Build APKs
+        env:
+          STORE_FILE_BASE64: ${{ secrets.STORE_FILE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # If signing secrets are available in GitHub Secrets, build Release. Otherwise, build Debug.
+          if [ ! -z "$STORE_FILE_BASE64" ]; then
+            echo "Signing secrets found! Building Release APK..."
+            gradle :app:assembleRelease
+          else
+            echo "Signing secrets not found. Building Debug APK for instant installation..."
+            gradle :app:assembleDebug
+          fi
+
+      - name: Locate and Organize APKs
+        run: |
+          mkdir -p release-artifacts
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk release-artifacts/TubeShare-release.apk
+            echo "Organized Release APK"
+          fi
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/TubeShare-debug.apk
+            echo "Organized Debug APK"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release-artifacts/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
