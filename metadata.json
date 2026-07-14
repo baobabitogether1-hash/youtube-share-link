@@ -1,0 +1,6 @@
+{
+  "name": "TubeShare",
+  "description": "Share YouTube links with personalized messages and timestamped notes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
