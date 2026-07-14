@@ -2,6 +2,8 @@ name: Generate APK & Create Release
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -42,13 +44,12 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # If signing secrets are available in GitHub Secrets, build Release. Otherwise, build Debug.
+          echo "Building Debug APK..."
+          gradle :app:assembleDebug -Pkotlin.compiler.execution.strategy=daemon
+
           if [ ! -z "$STORE_FILE_BASE64" ]; then
             echo "Signing secrets found! Building Release APK..."
-            gradle :app:assembleRelease
-          else
-            echo "Signing secrets not found. Building Debug APK for instant installation..."
-            gradle :app:assembleDebug
+            gradle :app:assembleRelease -Pkotlin.compiler.execution.strategy=daemon
           fi
 
       - name: Locate and Organize APKs
@@ -71,3 +72,9 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TubeShare-APKs
+          path: release-artifacts/*.apk
