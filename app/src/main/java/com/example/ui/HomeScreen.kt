@@ -963,13 +963,72 @@ fun YoutubeEmbeddedPlayer(
     startTimeSeconds: Int?,
     modifier: Modifier = Modifier
 ) {
-    val embedUrl = remember(videoId, startTimeSeconds) {
-        val base = "https://www.youtube.com/embed/$videoId?autoplay=1&fs=1&rel=0&enablejsapi=1"
-        if (startTimeSeconds != null && startTimeSeconds > 0) {
-            "$base&start=$startTimeSeconds"
-        } else {
-            base
-        }
+    val htmlContent = remember(videoId) {
+        """
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+              body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000000; }
+              #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+            </style>
+          </head>
+          <body>
+            <div id="player"></div>
+            <script>
+              var tag = document.createElement('script');
+              tag.src = "https://www.youtube.com/iframe_api";
+              var firstScriptTag = document.getElementsByTagName('script')[0];
+              firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+              var player;
+              var isPlayerReady = false;
+              var pendingSeek = null;
+
+              function onYouTubeIframeAPIReady() {
+                player = new YT.Player('player', {
+                  height: '100%',
+                  width: '100%',
+                  videoId: '$videoId',
+                  playerVars: {
+                    'playsinline': 1,
+                    'autoplay': 1,
+                    'rel': 0,
+                    'controls': 1,
+                    'fs': 1,
+                    'enablejsapi': 1,
+                    'origin': 'https://www.youtube.com'
+                  },
+                  events: {
+                    'onReady': onPlayerReady
+                  }
+                });
+              }
+
+              function onPlayerReady(event) {
+                isPlayerReady = true;
+                event.target.playVideo();
+                if (pendingSeek !== null) {
+                  event.target.seekTo(pendingSeek, true);
+                  pendingSeek = null;
+                } else {
+                  ${if (startTimeSeconds != null && startTimeSeconds > 0) "event.target.seekTo($startTimeSeconds, true);" else ""}
+                }
+              }
+
+              function seekTo(seconds) {
+                if (isPlayerReady && player && typeof player.seekTo === 'function') {
+                  player.seekTo(seconds, true);
+                  player.playVideo();
+                } else {
+                  pendingSeek = seconds;
+                }
+              }
+            </script>
+          </body>
+        </html>
+        """.trimIndent()
     }
 
     AndroidView(
@@ -990,12 +1049,12 @@ fun YoutubeEmbeddedPlayer(
                     loadWithOverviewMode = true
                 }
                 
-                loadUrl(embedUrl)
+                loadDataWithBaseURL("https://www.youtube.com", htmlContent, "text/html", "utf-8", null)
             }
         },
         update = { webView ->
-            if (webView.url != embedUrl) {
-                webView.loadUrl(embedUrl)
+            if (startTimeSeconds != null) {
+                webView.evaluateJavascript("seekTo($startTimeSeconds);", null)
             }
         },
         modifier = modifier
