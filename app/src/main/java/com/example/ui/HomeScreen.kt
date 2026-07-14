@@ -89,6 +89,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.example.data.TimestampNote
 import com.example.data.YoutubeShareWithNotes
@@ -952,6 +957,51 @@ fun EditorScreen(
     }
 }
 
+@Composable
+fun YoutubeEmbeddedPlayer(
+    videoId: String,
+    startTimeSeconds: Int?,
+    modifier: Modifier = Modifier
+) {
+    val embedUrl = remember(videoId, startTimeSeconds) {
+        val base = "https://www.youtube.com/embed/$videoId?autoplay=1&fs=1&rel=0&enablejsapi=1"
+        if (startTimeSeconds != null && startTimeSeconds > 0) {
+            "$base&start=$startTimeSeconds"
+        } else {
+            base
+        }
+    }
+
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                layoutParams = android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                webViewClient = WebViewClient()
+                webChromeClient = WebChromeClient()
+                
+                settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    mediaPlaybackRequiresUserGesture = false
+                    useWideViewPort = true
+                    loadWithOverviewMode = true
+                }
+                
+                loadUrl(embedUrl)
+            }
+        },
+        update = { webView ->
+            if (webView.url != embedUrl) {
+                webView.loadUrl(embedUrl)
+            }
+        },
+        modifier = modifier
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailsDialog(
@@ -965,6 +1015,9 @@ fun DetailsDialog(
     val videoId = remember(shareItem.share.youtubeUrl) {
         YoutubeShareViewModel.extractYoutubeVideoId(shareItem.share.youtubeUrl)
     }
+
+    var isPlaying by remember { mutableStateOf(false) }
+    var seekToSeconds by remember { mutableStateOf<Int?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1020,79 +1073,99 @@ fun DetailsDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Video Player Mock Thumbnail
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.Black)
-                            .clickable {
-                                // Tapping the big player/thumbnail opens the entire YouTube video
-                                try {
-                                    val intent = Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse(shareItem.share.youtubeUrl)
-                                    )
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast
-                                        .makeText(
-                                            context,
-                                            "Could not open browser/YouTube app",
-                                            Toast.LENGTH_SHORT
-                                        )
-                                        .show()
-                                }
-                            }
-                    ) {
-                        if (videoId != null) {
-                            AsyncImage(
-                                model = "https://img.youtube.com/vi/$videoId/0.jpg",
-                                contentDescription = "Video cover",
-                                contentScale = ContentScale.Crop,
+                    // Video Player Mock Thumbnail or Real WebView Player
+                    if (isPlaying && videoId != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(210.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.Black)
+                        ) {
+                            YoutubeEmbeddedPlayer(
+                                videoId = videoId,
+                                startTimeSeconds = seekToSeconds,
                                 modifier = Modifier.fillMaxSize()
                             )
-                            // Play Overlay Button
-                            Box(
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .background(Color.Red, CircleShape)
-                                    .align(Alignment.Center),
-                                contentAlignment = Alignment.Center
-                            ) {
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(210.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.Black)
+                                .clickable {
+                                    if (videoId != null) {
+                                        isPlaying = true
+                                    } else {
+                                        // Tapping the big player/thumbnail opens the entire YouTube video as fallback
+                                        try {
+                                            val intent = Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse(shareItem.share.youtubeUrl)
+                                            )
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast
+                                                .makeText(
+                                                    context,
+                                                    "Could not open browser/YouTube app",
+                                                    Toast.LENGTH_SHORT
+                                                )
+                                                .show()
+                                        }
+                                    }
+                                }
+                        ) {
+                            if (videoId != null) {
+                                AsyncImage(
+                                    model = "https://img.youtube.com/vi/$videoId/0.jpg",
+                                    contentDescription = "Video cover",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                // Play Overlay Button
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .background(Color.Red, CircleShape)
+                                        .align(Alignment.Center),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Watch inline",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                // Small Helper tag
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color.Black.copy(alpha = 0.8f),
+                                    modifier = Modifier
+                                        .padding(8.dp)
+                                        .align(Alignment.BottomEnd)
+                                ) {
+                                    Text(
+                                        text = "PLAY IN APP",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            } else {
                                 Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Watch on YouTube",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    imageVector = Icons.Default.VideoLibrary,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.6f),
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .align(Alignment.Center)
                                 )
                             }
-                            // Small Helper tag
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color.Black.copy(alpha = 0.8f),
-                                modifier = Modifier
-                                    .padding(8.dp)
-                                    .align(Alignment.BottomEnd)
-                            ) {
-                                Text(
-                                    text = "TAP TO WATCH",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.VideoLibrary,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.6f),
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .align(Alignment.Center)
-                            )
                         }
                     }
 
@@ -1208,25 +1281,9 @@ fun DetailsDialog(
                                             color = MaterialTheme.colorScheme.secondaryContainer,
                                             modifier = Modifier
                                                 .clickable {
-                                                    // Jump directly to this timestamp on YouTube!
                                                     if (videoId != null) {
-                                                        try {
-                                                            val timestampUrl =
-                                                                "https://youtu.be/$videoId?t=${note.timeSeconds}"
-                                                            val intent = Intent(
-                                                                Intent.ACTION_VIEW,
-                                                                Uri.parse(timestampUrl)
-                                                            )
-                                                            context.startActivity(intent)
-                                                        } catch (e: Exception) {
-                                                            Toast
-                                                                .makeText(
-                                                                    context,
-                                                                    "Could not open link",
-                                                                    Toast.LENGTH_SHORT
-                                                                )
-                                                                .show()
-                                                        }
+                                                        isPlaying = true
+                                                        seekToSeconds = note.timeSeconds
                                                     }
                                                 }
                                         ) {
